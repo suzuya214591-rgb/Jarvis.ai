@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Bumblebee AI Assistant</title>
+    <style>
+        :root {
+            --bg-main: #000000;
+            --bg-sidebar: #000000;
+            --bg-input: #0a0a0a;
+            --bg-modal: #1a1a1a;
+            --text-primary: #ffffff;
+            --text-secondary: #888888;
+            --yellow: #FFD700;
+            --yellow-dark: #FFA500;
+            --yellow-glow: rgba(255, 215, 0, 0.3);
+            --border: #1a1a1a;
+            --hover-bg: #2a2a2a;
+            --danger: #ff4444;
+            --success: #00ff88;
+        }
+
+        body.light-mode {
+            --bg-main: #ffffff;
+            --bg-sidebar: #f9f9f9;
+            --bg-input: #f0f0f0;
+            --bg-modal: #ffffff;
+            --text-primary: #000000;
+            --text-secondary: #666666;
+            --border: #e5e5e5;
+            --hover-bg: #f0f0f0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; width: 100%; overflow: hidden; position: fixed; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif; background: var(--bg-main); color: var(--text-primary); display: flex; transition: background 0.3s, color 0.3s; }
+
+        /* SPLASH SCREEN - Estilo Transformers */
+        .splash-screen {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-main); z-index: 9999;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.5s ease;
+        }
+        .splash-screen.hidden { opacity: 0; pointer-events: none; }
+        
+        .splash-logo-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin-bottom: 40px;
+        }
+        
+        .splash-text-initial {
+            font-size: 48px;
+            font-weight: bold;
+            color: var(--yellow);
+            letter-spacing: 20px;
+            text-shadow: 0 0 30px var(--yellow-glow);
+            animation: textReveal 2s ease-out;
+            opacity: 0;
+        }
+        
+        @keyframes textReveal {
+            0% { opacity: 0; letter-spacing: 30px; filter: blur(10px); }
+            50% { opacity: 1; letter-spacing: 20px; filter: blur(0); }
+            100% { opacity: 0; letter-spacing: 20px; transform: scale(0.8); }
+        }
+        
+        .splash-autobot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            width: 150px;
+            height: 150px;
+            fill: var(--yellow);
+            filter: drop-shadow(0 0 40px var(--yellow-glow));
+            animation: autobotTransform 1.5s ease-out 1.8s forwards;
+        }
+        
+        @keyframes autobotTransform {
+            0% { transform: translate(-50%, -50%) scale(0) rotate(-180deg); opacity: 0; }
+            50% { transform: translate(-50%, -50%) scale(1.2) rotate(10deg); }
+            100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        .splash-title {
+            font-size: 36px;
+            font-weight: bold;
+            color: var(--yellow);
+            letter-spacing: 8px;
+            margin-top: 30px;
+            opacity: 0;
+            animation: fadeInUp 1s ease 3s forwards;
+        }
+
+        .splash-subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            letter-spacing: 5px;
+            margin-top: 10px;
+            opacity: 0;
+            animation: fadeInUp 1s ease 3.3s forwards;
+        }
+
+        @keyframes fadeInUp {
+            to { opacity: 1; transform: translateY(0); }
+            from { opacity: 0; transform: translateY(20px); }
+        }
+
+        /* LOGIN SCREEN */
+        .login-screen {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-main); z-index: 100;
+            display: none; flex-direction: column; align-items: center; justify-content: center; padding: 20px;
+        }
+        .login-screen.active { display: flex; }
+        
+        .login-logo {
+            width: 100px;
+            height: 100px;
+            fill: var(--yellow);
+            margin-bottom: 30px;
+            filter: drop-shadow(0 0 30px var(--yellow-glow));
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+        
+        .login-title {
+            font-size: 36px;
+            font-weight: bold;
+            color: var(--yellow);
+            letter-spacing: 6px;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px var(--yellow-glow);
+        }
+        
+        .login-subtitle {
+            font-size: 12px;
+            color: var(--text-secondary);
+            letter-spacing: 4px;
+            margin-bottom: 50px;
+        }
+        
+        .login-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            max-width: 350px;
+        }
+        
+        .login-btn {
+            padding: 16px 24px;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+        
+        .login-btn-google {
+            background: white;
+            color: #333;
+        }
+        .login-btn-google:hover { background: #f0f0f0; transform: translateY(-2px); }
+        
+        .login-btn-email {
+            background: var(--yellow);
+            color: var(--black);
+            box-shadow: 0 0 25px var(--yellow-glow);
+        }
+        .login-btn-email:hover {
+            box-shadow: 0 0 40px var(--yellow-glow);
+            transform: translateY(-2px);
+        }
+        
+        .login-btn-guest {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 2px solid var(--border);
+        }
+        .login-btn-guest:hover {
+            color: var(--text-primary);
+            border-color: var(--yellow);
+        }
+        
+        .login-divider {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 10px 0;
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+        .login-divider::before, .login-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* OVERLAY */
+        .overlay {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7); z-index: 99; backdrop-filter: blur(3px);
+        }
+        .overlay.active { display: block; }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 280px; background: var(--bg-sidebar); border-right: 1px solid var(--border);
+            display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 100; position: relative;
+        }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid var(--border); }
+        
+        .new-chat-btn {
+            display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px;
+            border: 1px solid var(--yellow); border-radius: 10px; background: transparent;
+            color: var(--yellow); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s;
+        }
+        .new-chat-btn:hover { background: var(--yellow); color: var(--black); box-shadow: 0 0 20px var(--yellow-glow); }
+
+        .history-section { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px; }
+        .history-search {
+            background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+            padding: 10px; margin-bottom: 15px; color: var(--text-primary); font-size: 14px; width: 100%;
+        }
+        .history-search:focus { outline: none; border-color: var(--yellow); }
+        
+        .history-title {
+            font-size: 11px; color: var(--text-secondary); margin: 15px 10px 8px 10px;
+            font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+        }
+
+        .history-item {
+            padding: 12px; border-radius: 10px; cursor: pointer; font-size: 14px; margin-bottom: 4px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary);
+            transition: all 0.2s; user-select: none; display: flex; align-items: center; gap: 10px;
+            border: 1px solid transparent;
+        }
+        .history-item:hover { background: var(--bg-input); border-color: var(--yellow); }
+        .history-item.active { background: rgba(255, 215, 0, 0.1); border-color: var(--yellow); }
+        .history-item .chat-icon { flex-shrink: 0; opacity: 0.6; color: var(--yellow); }
+        .history-item .chat-tag {
+            margin-left: auto; font-size: 10px; color: var(--text-secondary);
+            flex-shrink: 0; background: var(--bg-input); padding: 2px 6px; border-radius: 4px;
+        }
+
+        .sidebar-footer {
+            border-top: 1px solid var(--border); padding: 15px; position: relative;
+        }
+        
+        .user-profile-trigger {
+            display: flex; align-items: center; gap: 12px; padding: 12px;
+            border-radius: 10px; cursor: pointer; transition: all 0.3s;
+            background: var(--bg-input); border: 1px solid transparent;
+        }
+        .user-profile-trigger:hover { background: var(--hover-bg); border-color: var(--yellow); }
+        
+        .user-avatar {
+            width: 36px; height: 36px; border-radius: 50%; background: var(--yellow);
+            color: var(--black); display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px; flex-shrink: 0; overflow: hidden;
+        }
+        .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        
+        .user-info { flex: 1; min-width: 0; }
+        .user-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-plan { font-size: 11px; color: var(--text-secondary); }
+        .user-arrow { color: var(--text-secondary); font-size: 12px; }
+        .close-sidebar {
+            display: none; position: absolute; top: 15px; right: 15px;
+            background: none; border: none; color: var(--text-secondary); font-size: 28px; cursor: pointer;
+        }
+
+        /* DROPDOWN MENU */
+        .user-dropdown-menu {
+            position: absolute; bottom: 100%; left: 15px; right: 15px;
+            background: var(--bg-modal); border: 1px solid var(--yellow); border-radius: 12px;
+            padding: 10px; margin-bottom: 10px; box-shadow: 0 -10px 40px rgba(255, 215, 0, 0.3);
+            display: none; z-index: 200; animation: slideUp 0.3s ease;
+        }
+        .user-dropdown-menu.active { display: block; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .dropdown-item {
+            display: flex; align-items: center; gap: 12px; padding: 12px;
+            border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--text-primary);
+            transition: all 0.2s; position: relative;
+        }
+        .dropdown-item:hover { background: var(--hover-bg); }
+        .dropdown-item svg { width: 18px; height: 18px; fill: var(--yellow); }
+        .dropdown-arrow { margin-left: auto; opacity: 0.5; font-size: 12px; }
+        
+        .help-submenu {
+            position: absolute; right: 100%; bottom: 0; width: 220px;
+            background: var(--bg-modal); border: 1px solid var(--yellow); border-radius: 12px;
+            padding: 10px; margin-right: 10px; box-shadow: 0 -10px 40px rgba(255, 215, 0, 0.3);
+            display: none; z-index: 201;
+        }
+        .help-submenu.active { display: block; }
+        .submenu-item {
+            display: flex; align-items: center; gap: 10px; padding: 10px;
+            border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--text-primary);
+            transition: all 0.2s;
+        }
+        .submenu-item:hover { background: var(--hover-bg); }
+        .submenu-item svg { width: 16px; height: 16px; fill: var(--yellow); }
+
+        /* MAIN CONTENT */
+        .main-content {
+            flex: 1; display: flex; flex-direction: column; position: relative;
+            height: 100%; min-height: 0; overflow: hidden;
+        }
+        .menu-toggle {
+            display: none; position: absolute; top: 15px; left: 15px;
+            background: var(--bg-input); border: 1px solid var(--yellow); color: var(--yellow);
+            padding: 12px 16px; border-radius: 10px; z-index: 50; cursor: pointer; font-size: 20px;
+        }
+
+        /* CHAT CONTAINER */
+        .chat-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 25px 20px; scroll-behavior: smooth; }
+        .message-row {
+            display: flex; padding: 18px; max-width: 900px; margin: 0 auto; width: 100%;
+            gap: 15px; animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .message-row.user { justify-content: flex-end; }
+
+        .avatar {
+            width: 36px; height: 36px; border-radius: 50%; display: flex;
+            align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0;
+        }
+        .avatar.bot { background: var(--yellow); color: var(--black); }
+        .avatar.user { background: var(--hover-bg); color: var(--text); }
+
+        .message-content { flex: 1; line-height: 1.6; font-size: 15px; overflow-wrap: break-word; }
+        .message-row.user .message-content {
+            background: var(--yellow); padding: 14px 18px; border-radius: 18px;
+            max-width: 80%; border: 1px solid var(--yellow); color: var(--black);
+        }
+        .message-content pre {
+            background: var(--bg-input); padding: 14px; border-radius: 10px; overflow-x: auto;
+            margin: 12px 0; position: relative; border: 1px solid var(--border);
+        }
+        .message-content code {
+            font-family: 'Courier New', monospace; font-size: 13px;
+            background: rgba(255, 215, 0, 0.15); padding: 3px 8px; border-radius: 6px; color: var(--yellow);
+        }
+        .message-content pre code { background: none; padding: 0; color: #e6e6e6; }
+        .message-content ul, .message-content ol { margin-left: 20px; margin-bottom: 12px; }
+        .message-content p { margin-bottom: 12px; }
+        .message-content p:last-child { margin-bottom: 0; }
+
+        .copy-code-btn {
+            position: absolute; top: 10px; right: 10px; background: transparent;
+            border: 1px solid var(--border); color: var(--text-secondary); cursor: pointer;
+            font-size: 11px; padding: 5px 10px; border-radius: 6px; transition: all 0.2s;
+        }
+        .copy-code-btn:hover { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
+
+        /* TYPING */
+        .typing-indicator { display: flex; align-items: center; gap: 12px; color: var(--yellow); font-size: 14px; }
+        .typing-dots { display: flex; gap: 5px; }
+        .typing-dots span {
+            width: 8px; height: 8px; background: var(--yellow); border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dots span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+        /* INPUT */
+        .input-container {
+            padding: 15px 20px; background: var(--bg-main); border-top: 1px solid var(--border); flex-shrink: 0;
+        }
+        .input-wrapper { max-width: 868px; margin: 0 auto; }
+        .input-box {
+            background: var(--bg-input); border-radius: 26px; padding: 14px 18px;
+            display: flex; align-items: center; border: 1px solid var(--border);
+        }
+        .input-box:focus-within { border-color: var(--yellow); box-shadow: 0 0 20px rgba(255, 215, 0, 0.2); }
+        #user-input {
+            flex: 1; background: none; border: none; color: var(--text); font-size: 15px;
+            resize: none; max-height: 120px; outline: none; font-family: inherit;
+            line-height: 1.5; padding: 6px 0;
+        }
+        #user-input::placeholder { color: var(--text-secondary); }
+        .send-btn {
+            background: var(--yellow); color: var(--black); border: none;
+            width: 42px; height: 42px; border-radius: 50%; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; margin-left: 10px; flex-shrink: 0;
+            transition: all 0.3s;
+        }
+        .send-btn:hover { transform: scale(1.1); box-shadow: 0 0 25px var(--yellow-glow); }
+        .send-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+        /* WELCOME */
+        .welcome-container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: calc(100vh - 100px); text-align: center; padding: 40px 20px;
+            animation: fadeInUp 0.8s ease;
+        }
+        .welcome-logo {
+            width: 120px; height: 120px; margin-bottom: 25px;
+            fill: var(--yellow); filter: drop-shadow(0 0 30px var(--yellow-glow));
+        }
+        .welcome-title {
+            font-size: 32px; font-weight: bold; letter-spacing: 6px; margin-bottom: 10px;
+            color: var(--yellow); text-shadow: 0 0 20px var(--yellow-glow);
+        }
+        .welcome-subtitle { font-size: 13px; letter-spacing: 4px; color: var(--text-secondary); margin-bottom: 30px; }
+        .welcome-text { font-size: 16px; color: var(--text-secondary); max-width: 450px; line-height: 1.7; }
+
+        /* MODALES */
+        .modal {
+            display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8); z-index: 300; align-items: center; justify-content: center; padding: 20px;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--bg-modal); border: 1px solid var(--yellow); border-radius: 16px;
+            max-width: 500px; width: 100%; max-height: 80vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+        }
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 22px; border-bottom: 1px solid var(--border);
+        }
+        .modal-title { font-size: 22px; font-weight: 600; color: var(--yellow); }
+        .close-modal {
+            background: none; border: none; color: var(--text-secondary);
+            font-size: 28px; cursor: pointer; padding: 4px; transition: color 0.2s;
+        }
+        .close-modal:hover { color: var(--yellow); }
+        .modal-body { padding: 22px; }
+        .setting-item {
+            margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border);
+        }
+        .setting-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .setting-label { font-size: 15px; font-weight: 600; margin-bottom: 10px; display: block; color: var(--yellow); }
+        .setting-description { font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.5; }
+        .toggle-switch { display: flex; align-items: center; justify-content: space-between; }
+        .toggle {
+            width: 50px; height: 26px; background: var(--bg-input); border-radius: 13px;
+            position: relative; cursor: pointer; transition: background 0.3s; border: 1px solid var(--border);
+        }
+        .toggle.active { background: var(--yellow); border-color: var(--yellow); }
+        .toggle-slider {
+            width: 20px; height: 20px; background: white; border-radius: 50%;
+            position: absolute; top: 2px; left: 2px; transition: transform 0.3s;
+        }
+        .toggle.active .toggle-slider { transform: translateX(24px); }
+        .btn {
+            padding: 12px 18px; border-radius: 10px; border: none; cursor: pointer;
+            font-size: 14px; font-weight: 600; transition: all 0.3s;
+        }
+        .btn-primary { background: var(--yellow); color: var(--black); }
+        .btn-primary:hover { box-shadow: 0 0 25px var(--yellow-glow); transform: translateY(-2px); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-danger:hover { box-shadow: 0 0 25px rgba(255, 68, 68, 0.4); }
+        .btn-full { width: 100%; margin-top: 12px; }
+        .input-field {
+            width: 100%; padding: 12px; background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 10px; color: var(--text); margin-top: 10px; font-size: 14px; resize: vertical;
+            font-family: inherit;
+        }
+        .input-field:focus { outline: none; border-color: var(--yellow); }
+
+        /* CONTEXT MENU */
+        .context-menu {
+            position: fixed; background: var(--bg-modal); border: 1px solid var(--yellow);
+            border-radius: 12px; padding: 10px; z-index: 250; min-width: 220px;
+            box-shadow: 0 10px 40px rgba(255, 215, 0, 0.3); display: none;
+        }
+        .context-menu.active { display: block; }
+        .context-menu-item {
+            padding: 12px 14px; border-radius: 8px; cursor: pointer; font-size: 14px;
+            display: flex; align-items: center; gap: 10px; color: var(--text-primary); transition: all 0.2s;
+        }
+        .context-menu-item:hover { background: var(--hover-bg); }
+        .context-menu-item.danger { color: var(--danger); }
+        .context-menu-item.danger:hover { background: rgba(255, 68, 68, 0.1); }
+        .context-menu-divider { height: 1px; background: var(--border); margin: 8px 0; }
+
+        /* SCROLLBAR */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--black); }
+        ::-webkit-scrollbar-thumb { background: var(--yellow); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--yellow-dark); }
+
+        /* MOBILE */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%);
+                box-shadow: 2px 0 20px rgba(0,0,0,0.5);
+            }
+            .sidebar.open { transform: translateX(0); }
+            .close-sidebar { display: block; }
+            .menu-toggle { display: block; }
+            .message-row { padding: 14px; }
+            .welcome-title { font-size: 24px; }
+            .welcome-text { font-size: 14px; }
+            .input-container { padding: 12px 15px; }
+            .modal-content { margin: 15px; max-height: calc(100vh - 30px); }
+            .login-title { font-size: 28px; }
+            .help-submenu { right: auto; left: 0; bottom: auto; top: 100%; margin-right: 0; margin-top: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <body>
+    <!-- SPLASH SCREEN - Estilo Transformers -->
+    <div class="splash-screen" id="splash-screen">
+        <div class="splash-logo-container">
+            <div class="splash-text-initial" id="splash-text">BUMBLEBEE</div>
+            <svg class="splash-autobot" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+        </div>
+        <div class="splash-title">BUMBLEBEE</div>
+        <div class="splash-subtitle">ASISTENTE DE IA</div>
+    </div>
+
+    <!-- LOGIN SCREEN -->
+    <div class="login-screen" id="login-screen">
+        <svg class="login-logo" viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+        </svg>
+        <div class="login-title">BUMBLEBEE</div>
+        <div class="login-subtitle">ASISTENTE DE IA</div>
+        <div class="login-buttons">
+            <button class="login-btn login-btn-google" onclick="loginWithGoogle()">
+                <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                Continuar con Google
+            </button>
+            <div class="login-divider">o</div>
+            <button class="login-btn login-btn-email" onclick="showEmailLogin()">Continuar con correo</button>
+            <button class="login-btn login-btn-guest" onclick="continueAsGuest()">Continuar como invitado</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay" onclick="closeAllMenus()"></div>
+
+    <aside class="sidebar" id="sidebar">
+        <button class="close-sidebar" onclick="closeSidebar()">×</button>
+        <div class="sidebar-header">
+            <button class="new-chat-btn" onclick="newChat()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                Nuevo chat
+            </button>
+        </div>
+        <div class="history-section" id="chat-history">
+            <input type="text" class="history-search" id="chat-search" placeholder="Buscar chats..." oninput="filterChats(this.value)">
+        </div>
+        <div class="sidebar-footer">
+            <div class="user-dropdown-menu" id="user-dropdown">
+                <div class="dropdown-item" onclick="openSettings('general')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    Configuración
+                </div>
+                <div class="dropdown-item" id="help-trigger">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Ayuda
+                    <span class="dropdown-arrow">›</span>
+                    <div class="help-submenu" id="help-submenu">
+                        <div class="submenu-item" onclick="reportError()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                            Informar de un error
+                        </div>
+                    </div>
+                </div>
+                <div class="dropdown-item" onclick="logout()" style="color: var(--text-secondary);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    Cerrar sesión
+                </div>
+            </div>
+            <div class="user-profile-trigger" id="user-profile-btn" onclick="toggleUserMenu(event)">
+                <div class="user-avatar" id="user-avatar">B</div>
+                <div class="user-info">
+                    <div class="user-name" id="user-name">Invitado</div>
+                    <div class="user-plan" id="user-plan">Gratis</div>
+                </div>
+                <div class="user-arrow">›</div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+        <div class="chat-container" id="chat-container">
+            <div class="welcome-container" id="welcome-screen">
+                <svg class="welcome-logo" viewBox="0 0 24 24">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+                <div class="welcome-title">BUMBLEBEE</div>
+                <div class="welcome-subtitle">ASISTENTE DE IA</div>
+                <div class="welcome-text">Hola, soy Bumblebee, tu asistente de IA. Pregunta lo que quieras.</div>
+            </div>
+        </div>
+        <div class="input-container">
+            <div class="input-wrapper">
+                <div class="input-box">
+                    <textarea id="user-input" placeholder="Escribe tu mensaje a Bumblebee..." rows="1"></textarea>
+                    <button class="send-btn" id="send-btn" onclick="sendMessage()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- CONTEXT MENU -->
+    <div class="context-menu" id="context-menu">
+        <div class="context-menu-item" onclick="contextAction('pin')"> Fijar</div>
+        <div class="context-menu-item" onclick="contextAction('rename')">✏️ Renombrar</div>
+        <div class="context-menu-item" onclick="contextAction('archive')">📦 Archivar</div>
+        <div class="context-menu-item" onclick="contextAction('share')">🔗 Compartir</div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" onclick="contextAction('delete')">🗑️ Eliminar</div>
+    </div>
+
+    <!-- EMAIL LOGIN MODAL -->
+    <div class="modal" id="email-login-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Iniciar sesión con correo</div>
+                <button class="close-modal" onclick="closeEmailLogin()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <label class="setting-label">Correo electrónico</label>
+                    <input type="email" id="email-input" class="input-field" placeholder="tu@email.com">
+                </div>
+                <div class="setting-item">
+                    <label class="setting-label">Contraseña</label>
+                    <input type="password" id="password-input" class="input-field" placeholder="••••••••">
+                </div>
+                <button class="btn btn-primary btn-full" onclick="doEmailLogin()">Iniciar sesión</button>
+                <p style="text-align: center; color: var(--text-secondary); font-size: 12px; margin-top: 12px;">¿No tenés cuenta? Se creará automáticamente</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div class="modal" id="settings-modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <div class="modal-title">Configuración</div>
+                <button class="close-modal" onclick="closeSettings()">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- General -->
+                <div id="settings-general">
+                    <div class="setting-item">
+                        <label class="setting-label">Apariencia</label>
+                        <select class="input-field" id="appearance-select" onchange="changeAppearance(this.value)" style="min-height: 44px;">
+                            <option value="system">Sistema</option>
+                            <option value="light">Claro</option>
+                            <option value="dark">Oscuro</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Contraste</label>
+                        <select class="input-field" id="contrast-select" onchange="changeContrast(this.value)" style="min-height: 44px;">
+                            <option value="normal">Normal</option>
+                            <option value="high">Alto</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Color de realce</label>
+                        <select class="input-field" id="color-select" onchange="changeAccentColor(this.value)" style="min-height: 44px;">
+                            <option value="#FFD700">🟡 Amarillo (Predeterminado)</option>
+                            <option value="#ff4444">🔴 Rojo</option>
+                            <option value="#ffdd00"> Amarillo brillante</option>
+                            <option value="#ffffff">⚪ Blanco</option>
+                            <option value="#ff8800"> Naranja</option>
+                            <option value="#ff66b2">🩷 Rosa</option>
+                            <option value="#aa00ff">🟣 Morado</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Idioma</label>
+                        <select class="input-field" id="language-select" onchange="changeLanguage(this.value)" style="min-height: 44px;">
+                            <option value="es">Español</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Personalización -->
+                <div id="settings-personalization" style="display:none;">
+                    <div class="setting-item">
+                        <label class="setting-label">Nivel de formalidad</label>
+                        <select class="input-field" id="tone-select" onchange="savePersonalization()" style="min-height: 44px;">
+                            <option value="friendly">Amigable</option>
+                            <option value="formal">Formal</option>
+                            <option value="direct">Directo</option>
+                            <option value="creative">Creativo</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Características</label>
+                        <div class="setting-description">Selecciona otras personalizaciones además del estilo y tono base.</div>
+                        <div class="toggle-switch" style="margin-top: 10px;">
+                            <span>Cálida</span>
+                            <div class="toggle" id="feat-warm" onclick="toggleFeature('warm', this)"><div class="toggle-slider"></div></div>
+                        </div>
+                        <div class="toggle-switch" style="margin-top: 10px;">
+                            <span>Entusiasta</span>
+                            <div class="toggle active" id="feat-enthusiastic" onclick="toggleFeature('enthusiastic', this)"><div class="toggle-slider"></div></div>
+                        </div>
+                        <div class="toggle-switch" style="margin-top: 10px;">
+                            <span>Encabezados y listas</span>
+                            <div class="toggle" id="feat-headings" onclick="toggleFeature('headings', this)"><div class="toggle-slider"></div></div>
+                        </div>
+                        <div class="toggle-switch" style="margin-top: 10px;">
+                            <span>Emoji</span>
+                            <div class="toggle" id="feat-emoji" onclick="toggleFeature('emoji', this)"><div class="toggle-slider"></div></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Instrucciones personalizadas</label>
+                        <textarea class="input-field" id="custom-instructions" placeholder="Escribe instrucciones específicas para Bumblebee..." oninput="savePersonalization()" rows="4"></textarea>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Acerca de ti</label>
+                        <input type="text" class="input-field" id="about-nickname" placeholder="Apodo" style="min-height: 44px; margin-bottom: 10px;" oninput="savePersonalization()">
+                        <input type="text" class="input-field" id="about-occupation" placeholder="Ocupación" style="min-height: 44px; margin-bottom: 10px;" oninput="savePersonalization()">
+                        <textarea class="input-field" id="about-more" placeholder="Más sobre ti..." oninput="savePersonalization()" rows="3"></textarea>
+                    </div>
+                </div>
+
+                <!-- Memoria -->
+                <div id="settings-memory" style="display:none;">
+                    <div class="setting-item">
+                        <div class="toggle-switch">
+                            <div>
+                                <label class="setting-label">Activar memoria</label>
+                                <div class="setting-description">Permite que Bumblebee recuerde detalles de tus conversaciones.</div>
+                            </div>
+                            <div class="toggle active" id="memory-toggle" onclick="toggleMemory(this)"><div class="toggle-slider"></div></div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label">Resumen de la memoria</label>
+                        <div class="setting-description">Consulta un resumen de lo que Bumblebee ha aprendido sobre ti.</div>
+                        <button class="btn btn-primary" onclick="openMemoriesModal()" style="margin-top: 10px;">Gestionar memorias</button>
+                    </div>
+                </div>
+
+                <!-- Notificaciones -->
+                <div id="settings-notifications" style="display:none;">
+                    <div class="setting-item">
+                        <div class="toggle-switch">
+                            <div>
+                                <label class="setting-label">Notificaciones de respuesta</label>
+                                <div class="setting-description">Recibir una alerta cuando Bumblebee termine de generar su respuesta.</div>
+                            </div>
+                            <div class="toggle" id="notif-toggle" onclick="toggleNotifications(this)"><div class="toggle-slider"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navegación de configuración -->
+                <div style="display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="showSettingsSection('general')">General</button>
+                    <button class="btn btn-primary" onclick="showSettingsSection('personalization')">Personalización</button>
+                    <button class="btn btn-primary" onclick="showSettingsSection('memory')">Memoria</button>
+                    <button class="btn btn-primary" onclick="showSettingsSection('notifications')">Notificaciones</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MEMORIES MODAL -->
+    <div class="modal" id="memories-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Memorias guardadas</div>
+                <button class="close-modal" onclick="closeMemoriesModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="memories-list" style="max-height: 400px; overflow-y: auto;">
+                    <p style="color: var(--text-secondary); text-align: center;">No hay recuerdos guardados</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+    <script>
+        // FIREBASE CONFIG
+        const firebaseConfig = {
+            apiKey: "AIzaSyA5d2b2NYyOr2R2AFBS3KLazf8XU0ngg3s",
+            authDomain: "jarvisai-faf0e.firebaseapp.com",
+            projectId: "jarvisai-faf0e",
+            storageBucket: "jarvisai-faf0e.firebasestorage.app",
+            messagingSenderId: "1007872127170",
+            appId: "1:1007872127170:web:3f7df10ff52717a2e30b5b"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // API URL - ️ CAMBIA ESTO por tu URL de Vercel
+           const API_URL = 'https://bumblebee-api-cinder-sandbar-9571.fly.dev/api/chat';
+
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const chatHistoryEl = document.getElementById('chat-history');
+
+        let currentUser = null;
+        let conversationHistory = [];
+        let currentChatId = null;
+        let chats = [];
+        let memories = [];
+        let contextChatId = null;
+        let notificationsEnabled = false;
+        let currentLang = 'es';
+        let memoryEnabled = true;
+        let personalization = {
+            tone: 'friendly',
+            features: { warm: false, enthusiastic: true, headings: false, emoji: false },
+            customInstructions: '',
+            about: { nickname: '', occupation: '', more: '' }
+        };
+
+        // SPLASH SCREEN
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                document.getElementById('splash-screen').classList.add('hidden');
+                checkAuthState();
+                loadPreferences();
+            }, 4500);
+        });
+
+        function checkAuthState() {
+            auth.onAuthStateChanged((user) => {
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('login-screen').classList.remove('active');
+                    updateUserProfile(user);
+                    loadChatsFromFirestore();
+                } else {
+                    currentUser = null;
+                    document.getElementById('login-screen').classList.add('active');
+                }
+            });
+        }
+
+        function loginWithGoogle() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).catch((error) => alert('Error: ' + error.message));
+        }
+
+        function showEmailLogin() { document.getElementById('email-login-modal').classList.add('active'); }
+        function closeEmailLogin() { document.getElementById('email-login-modal').classList.remove('active'); }
+
+        function doEmailLogin() {
+            const email = document.getElementById('email-input').value.trim();
+            const password = document.getElementById('password-input').value.trim();
+            if (!email || !password) { alert('Completá todos los campos'); return; }
+            auth.signInWithEmailAndPassword(email, password).catch((error) => {
+                if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                    auth.createUserWithEmailAndPassword(email, password)
+                        .then(() => { alert('Cuenta creada'); closeEmailLogin(); })
+                        .catch((err) => alert('Error: ' + err.message));
+                } else { alert('Error: ' + error.message); }
+            });
+        }
+
+        function continueAsGuest() {
+            currentUser = { uid: 'guest_' + Date.now(), displayName: 'Invitado', email: null, photoURL: null, isGuest: true };
+            document.getElementById('login-screen').classList.remove('active');
+            updateUserProfile(currentUser);
+            loadChatsFromLocalStorage();
+        }
+
+        function logout() {
+            if (currentUser && !currentUser.isGuest) { auth.signOut(); }
+            else { currentUser = null; chats = []; renderChatHistory(); document.getElementById('login-screen').classList.add('active'); }
+            closeAllMenus();
+        }
+
+        function updateUserProfile(user) {
+            const name = user.displayName || user.email || 'Invitado';
+            const initial = name.charAt(0).toUpperCase();
+            document.getElementById('user-name').textContent = name;
+            document.getElementById('user-plan').textContent = user.isGuest ? 'Invitado' : 'Gratis';
+            const avatarEl = document.getElementById('user-avatar');
+            if (user.photoURL) { avatarEl.innerHTML = `<img src="${user.photoURL}" alt="${name}">`; }
+            else { avatarEl.textContent = initial; }
+        }
+
+        async function loadChatsFromFirestore() {
+            try {
+                db.collection('users').doc(currentUser.uid).collection('chats')
+                    .orderBy('timestamp', 'desc')
+                    .onSnapshot((snapshot) => {
+                        chats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        renderChatHistory();
+                    });
+            } catch (e) { console.error(e); }
+        }
+
+        function loadChatsFromLocalStorage() {
+            const stored = localStorage.getItem('guest_chats');
+            chats = stored ? JSON.parse(stored) : [];
+            renderChatHistory();
+        }
+
+        async function saveChatToFirestore(chat) {
+            if (currentUser && !currentUser.isGuest) {
+                await db.collection('users').doc(currentUser.uid).collection('chats').doc(chat.id).set(chat);
+            } else {
+                localStorage.setItem('guest_chats', JSON.stringify(chats));
+            }
+        }
+
+        async function deleteChatFromFirestore(chatId) {
+            if (currentUser && !currentUser.isGuest) {
+                await db.collection('users').doc(currentUser.uid).collection('chats').doc(chatId).delete();
+            } else {
+                chats = chats.filter(c => c.id !== chatId);
+                localStorage.setItem('guest_chats', JSON.stringify(chats));
+            }
+        }
+
+        // USER MENU
+        function toggleUserMenu(e) {
+            e.stopPropagation();
+            const menu = document.getElementById('user-dropdown');
+            const submenu = document.getElementById('help-submenu');
+            if (menu.classList.contains('active')) {
+                menu.classList.remove('active');
+                submenu.classList.remove('active');
+            } else {
+                menu.classList.add('active');
+            }
+        }
+
+        function openSettings(section = 'general') {
+            document.getElementById('user-dropdown').classList.remove('active');
+            document.getElementById('settings-modal').classList.add('active');
+            showSettingsSection(section);
+        }
+
+        function closeSettings() { document.getElementById('settings-modal').classList.remove('active'); }
+
+        function showSettingsSection(section) {
+            ['general', 'personalization', 'memory', 'notifications'].forEach(s => {
+                document.getElementById(`settings-${s}`).style.display = s === section ? 'block' : 'none';
+            });
+        }
+
+        function reportError() {
+            document.getElementById('user-dropdown').classList.remove('active');
+            document.getElementById('help-submenu').classList.remove('active');
+            alert('Gracias por reportar. El equipo de Bumblebee revisará tu informe.');
+        }
+
+        function closeAllMenus() {
+            document.getElementById('user-dropdown').classList.remove('active');
+            document.getElementById('help-submenu').classList.remove('active');
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('active');
+            closeSettings();
+            closeMemoriesModal();
+        }
+
+        const helpTrigger = document.getElementById('help-trigger');
+        const helpSubmenu = document.getElementById('help-submenu');
+        helpTrigger.addEventListener('mouseenter', () => { if (window.innerWidth > 768) helpSubmenu.classList.add('active'); });
+        helpTrigger.addEventListener('mouseleave', () => { if (window.innerWidth > 768) helpSubmenu.classList.remove('active'); });
+        helpTrigger.addEventListener('click', (e) => { if (window.innerWidth <= 768) { e.stopPropagation(); helpSubmenu.classList.toggle('active'); } });
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('open');
+            document.getElementById('overlay').classList.toggle('active');
+        }
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('active');
+        }
+
+        function newChat() {
+            currentChatId = null; 
+            conversationHistory = [];
+            chatContainer.innerHTML = `
+                <div class="welcome-container" id="welcome-screen">
+                    <svg class="welcome-logo" viewBox="0 0 24 24">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                    </svg>
+                    <div class="welcome-title">BUMBLEBEE</div>
+                    <div class="welcome-subtitle">ASISTENTE DE IA</div>
+                    <div class="welcome-text">Hola, soy Bumblebee, tu asistente de IA. Pregunta lo que quieras.</div>
+                </div>`;
+            closeSidebar();
+        }
+
+        function renderChatHistory(filter = '') {
+            const today = new Date().toDateString();
+            const yesterday = new Date(Date.now() - 86400000).toDateString();
+            const pinnedChats = chats.filter(c => c.pinned);
+            const unpinnedChats = chats.filter(c => !c.pinned && !c.archived);
+            const todayChats = unpinnedChats.filter(c => new Date(c.timestamp).toDateString() === today);
+            const yesterdayChats = unpinnedChats.filter(c => new Date(c.timestamp).toDateString() === yesterday);
+            const olderChats = unpinnedChats.filter(c => { const d = new Date(c.timestamp).toDateString(); return d !== today && d !== yesterday; });
+
+            let html = '<input type="text" class="history-search" id="chat-search" placeholder="Buscar chats..." oninput="filterChats(this.value)" value="' + filter + '">';
+            
+            if (pinnedChats.length > 0) { html += '<div class="history-title">📌 Fijados</div>'; pinnedChats.forEach(c => { if (c.title.toLowerCase().includes(filter.toLowerCase())) html += createChatItemHTML(c); }); }
+            if (todayChats.length > 0) { html += '<div class="history-title">Hoy</div>'; todayChats.forEach(c => { if (c.title.toLowerCase().includes(filter.toLowerCase())) html += createChatItemHTML(c); }); }
+            if (yesterdayChats.length > 0) { html += '<div class="history-title">Ayer</div>'; yesterdayChats.forEach(c => { if (c.title.toLowerCase().includes(filter.toLowerCase())) html += createChatItemHTML(c); }); }
+            if (olderChats.length > 0) { html += '<div class="history-title">Anterior</div>'; olderChats.forEach(c => { if (c.title.toLowerCase().includes(filter.toLowerCase())) html += createChatItemHTML(c); }); }
+            if (html === '<input type="text" class="history-search" id="chat-search" placeholder="Buscar chats..." oninput="filterChats(this.value)" value="' + filter + '">') { 
+                html += '<div style="text-align:center;color:var(--text-secondary);padding:20px;font-size:13px;">No hay conversaciones</div>'; 
+            }
+            
+            chatHistoryEl.innerHTML = html;
+            document.querySelectorAll('.history-item').forEach(item => { setupLongPress(item); });
+        }
+
+        function filterChats(value) { renderChatHistory(value); }
+
+        function createChatItemHTML(chat) {
+            const isActive = chat.id === currentChatId ? 'active' : '';
+            return `<div class="history-item ${isActive}" data-chat-id="${chat.id}"><span class="chat-icon">💬</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${chat.title}</span>${chat.tag ? `<span class="chat-tag">${chat.tag}</span>` : ''}</div>`;
+        }
+
+        function setupLongPress(element) {
+            let pressTimer;
+            const chatId = element.dataset.chatId;
+            const showMenu = (e) => {
+                e.preventDefault(); contextChatId = chatId;
+                const menu = document.getElementById('context-menu');
+                let x = e.touches ? e.touches[0].clientX : e.clientX;
+                let y = e.touches ? e.touches[0].clientY : e.clientY;
+                menu.style.left = Math.min(x, window.innerWidth - 220) + 'px';
+                menu.style.top = Math.min(y, window.innerHeight - 250) + 'px';
+                menu.classList.add('active');
+            };
+            const hideMenu = () => clearTimeout(pressTimer);
+            element.addEventListener('touchstart', (e) => { pressTimer = setTimeout(() => showMenu(e), 500); }, { passive: false });
+            element.addEventListener('touchend', hideMenu);
+            element.addEventListener('touchmove', hideMenu);
+            element.addEventListener('mousedown', (e) => { pressTimer = setTimeout(() => showMenu(e), 500); });
+            element.addEventListener('mouseup', hideMenu);
+            element.addEventListener('mouseleave', hideMenu);
+            element.addEventListener('contextmenu', (e) => { e.preventDefault(); showMenu(e); });
+            element.addEventListener('click', () => { loadChat(chatId); });
+        }
+
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('context-menu');
+            if (!menu.contains(e.target)) { menu.classList.remove('active'); }
+        });
+
+        function contextAction(action) {
+            const chat = chats.find(c => c.id === contextChatId);
+            if (!chat) return;
+            document.getElementById('context-menu').classList.remove('active');
+            switch(action) {
+                case 'pin': chat.pinned = !chat.pinned; saveChatToFirestore(chat); renderChatHistory(); break;
+                case 'rename': const t = prompt('Nuevo nombre:', chat.title); if (t && t.trim()) { chat.title = t.trim(); saveChatToFirestore(chat); renderChatHistory(); } break;
+                case 'archive': chat.archived = true; saveChatToFirestore(chat); if (currentChatId === chat.id) newChat(); renderChatHistory(); break;
+                case 'share': const s = chat.messages.map(m => `${m.role==='user'?'Tú':'Bumblebee'}: ${m.content}`).join('\n\n'); if (navigator.share) navigator.share({title:'Conversación con Bumblebee',text:s}).catch(()=>{}); else { navigator.clipboard.writeText(s); alert('Copiado'); } break;
+                case 'delete': if (confirm('¿Eliminar esta conversación?')) { deleteChatFromFirestore(chat.id); chats = chats.filter(c => c.id !== contextChatId); if (currentChatId === contextChatId) newChat(); renderChatHistory(); } break;
+            }
+        }
+
+        function loadChat(chatId) {
+            const chat = chats.find(c => c.id === chatId);
+            if (!chat) return;
+            currentChatId = chatId; conversationHistory = chat.messages || [];
+            chatContainer.innerHTML = '';
+            conversationHistory.forEach(msg => {
+                const h = msg.role === 'user' 
+                    ? `<div class="message-row user"><div class="avatar user">Tú</div><div class="message-content"><p>${msg.content.replace(/\n/g,'<br>')}</p></div></div>`
+                    : `<div class="message-row bot"><div class="avatar bot">B</div><div class="message-content">${parseMarkdown(msg.content)}</div></div>`;
+                chatContainer.insertAdjacentHTML('beforeend', h);
+            });
+            addCopyButtons(); renderChatHistory(); closeSidebar();
+        }
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+            if (!currentChatId) {
+                currentChatId = Date.now().toString();
+                const nc = { id: currentChatId, title: message.substring(0,30)+(message.length>30?'...':''), messages: [], timestamp: Date.now(), pinned: false };
+                chats.unshift(nc); await saveChatToFirestore(nc); renderChatHistory();
+            }
+            userInput.value = ''; userInput.style.height = 'auto'; sendBtn.disabled = true;
+            conversationHistory.push({ role: 'user', content: message });
+            if (chatContainer.querySelector('.welcome-container')) chatContainer.innerHTML = '';
+            chatContainer.insertAdjacentHTML('beforeend', `<div class="message-row user"><div class="avatar user">Tú</div><div class="message-content"><p>${message.replace(/\n/g,'<br>')}</p></div></div>`);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            chatContainer.insertAdjacentHTML('beforeend', `<div class="message-row bot" id="typing-indicator"><div class="avatar bot">B</div><div class="message-content"><div class="typing-indicator"><div class="typing-dots"><span></span><span></span><span></span></div>Bumblebee está pensando...</div></div></div>`);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            try {
+                const res = await fetch(API_URL, { 
+                    method: 'POST', 
+                    headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify({ 
+                        message, 
+                        history: memoryEnabled ? conversationHistory.slice(0,-1) : [],
+                        preference:
+                        {
+            tone: document.getElementById('tone-select').value,
+            features: personalization.features,
+            customInstructions: document.getElementById('custom-instructions').value,
+            about: personalization.about
+        },
+                        memories: memoryEnabled ? memories : []
+                    }) 
+                });
+                const data = await res.json();
+                document.getElementById('typing-indicator').remove();
+                const botResponse = data.response || 'No pude generar una respuesta.';
+                conversationHistory.push({ role: 'bot', content: botResponse });
+                const idx = chats.findIndex(c => c.id === currentChatId);
+                if (idx >= 0) { chats[idx].messages = [...conversationHistory]; chats[idx].timestamp = Date.now(); await saveChatToFirestore(chats[idx]); }
+                renderChatHistory();
+                chatContainer.insertAdjacentHTML('beforeend', `<div class="message-row bot"><div class="avatar bot">B</div><div class="message-content">${parseMarkdown(botResponse)}</div></div>`);
+                addCopyButtons();
+                
+                // Actualizar modelo actual
+                if (data.model_used) {
+                    console.log('Modelo usado:', data.model_used);
+                }
+                
+                if (memoryEnabled) extractMemories(message);
+                if (notificationsEnabled) {
+                    setTimeout(() => alert("🔔 ¡Bumblebee ha terminado de responder!"), 500);
+                }
+            } catch (err) {
+                document.getElementById('typing-indicator').remove();
+                chatContainer.insertAdjacentHTML('beforeend', `<div class="message-row bot"><div class="avatar bot">B</div><div class="message-content" style="color:var(--danger);">❌ Error de conexión. Intentá de nuevo.</div></div>`);
+            } finally { sendBtn.disabled = false; chatContainer.scrollTop = chatContainer.scrollHeight; }
+        }
+
+        function extractMemories(userMsg) {
+            const patterns = [/me llamo\s+(\w+)/i, /soy\s+(\w+)/i, /vivo en\s+([^.,!?]+)/i, /trabajo en\s+([^.,!?]+)/i];
+            patterns.forEach(pattern => {
+                const match = userMsg.match(pattern);
+                if (match) {
+                    const memory = match[0].trim();
+                    if (!memories.includes(memory)) {
+                        memories.push(memory);
+                        localStorage.setItem('bumblebee_memories', JSON.stringify(memories));
+                    }
+                }
+            });
+        }
+
+        function parseMarkdown(text) {
+            let h = text.replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\*(.*?)\*/g,'<em>$1</em>').replace(/^- (.*$)/gim,'<li>$1</li>').replace(/\n/g,'<br>');
+            return h.replace(/(<li>.*?<\/li>(\s*<br>)?)+/g, m => `<ul>${m.replace(/<br>/g,'')}</ul>`);
+        }
+
+        function addCopyButtons() {
+            document.querySelectorAll('pre').forEach(pre => {
+                if (!pre.querySelector('.copy-code-btn')) {
+                    const b = document.createElement('button'); b.className = 'copy-code-btn'; b.textContent = 'Copiar';
+                    b.onclick = () => { navigator.clipboard.writeText(pre.querySelector('code').innerText); b.textContent = '✓'; setTimeout(() => b.textContent = 'Copiar', 2000); };
+                    pre.appendChild(b);
+                }
+            });
+        }
+
+        // CONFIGURACIÓN
+        function changeAppearance(value) {
+            document.body.classList.remove('light-mode');
+            if (value === 'light') document.body.classList.add('light-mode');
+            localStorage.setItem('bumblebee_appearance', value);
+        }
+
+        function changeContrast(value) {
+            document.body.classList.remove('high-contrast');
+            if (value === 'high') document.body.classList.add('high-contrast');
+            localStorage.setItem('bumblebee_contrast', value);
+        }
+
+        function changeAccentColor(color) {
+            document.documentElement.style.setProperty('--yellow', color);
+            localStorage.setItem('bumblebee_accent', color);
+        }
+
+        function changeLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('bumblebee_lang', lang);
+        }
+
+        function toggleFeature(feature, element) {
+            element.classList.toggle('active');
+            personalization.features[feature] = element.classList.contains('active');
+            savePersonalization();
+        }
+
+        function toggleMemory(element) {
+            element.classList.toggle('active');
+            memoryEnabled = element.classList.contains('active');
+            localStorage.setItem('bumblebee_memory_enabled', memoryEnabled);
+        }
+
+        function toggleNotifications(element) {
+            element.classList.toggle('active');
+            notificationsEnabled = element.classList.contains('active');
+            localStorage.setItem('bumblebee_notifications', notificationsEnabled);
+        }
+
+        function savePersonalization() {
+            personalization.tone = document.getElementById('tone-select').value;
+            personalization.customInstructions = document.getElementById('custom-instructions').value;
+            personalization.about.nickname = document.getElementById('about-nickname').value;
+            personalization.about.occupation = document.getElementById('about-occupation').value;
+            personalization.about.more = document.getElementById('about-more').value;
+            localStorage.setItem('bumblebee_personalization', JSON.stringify(personalization));
+        }
+
+        function openMemoriesModal() {
+            document.getElementById('memories-modal').classList.add('active');
+            renderMemoriesList();
+        }
+
+        function closeMemoriesModal() { document.getElementById('memories-modal').classList.remove('active'); }
+
+        function renderMemoriesList() {
+            const listEl = document.getElementById('memories-list');
+            if (memories.length === 0) {
+                listEl.innerHTML = '<p style="color: var(--text-secondary); text-align: center;">No hay recuerdos guardados</p>';
+            } else {
+                listEl.innerHTML = memories.map(m => `
+                    <div class="setting-item" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>${m}</span>
+                        <button class="btn btn-danger" onclick="deleteMemory('${m}')" style="padding: 6px 12px; font-size: 12px;">Eliminar</button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function deleteMemory(memory) {
+            memories = memories.filter(m => m !== memory);
+            localStorage.setItem('bumblebee_memories', JSON.stringify(memories));
+            renderMemoriesList();
+        }
+
+        function loadPreferences() {
+            const app = localStorage.getItem('bumblebee_appearance') || 'system';
+            document.getElementById('appearance-select').value = app;
+            changeAppearance(app);
+            
+            const con = localStorage.getItem('bumblebee_contrast') || 'normal';
+            document.getElementById('contrast-select').value = con;
+            changeContrast(con);
+            
+            const col = localStorage.getItem('bumblebee_accent') || '#FFD700';
+            document.getElementById('color-select').value = col;
+            changeAccentColor(col);
+            
+            const lang = localStorage.getItem('bumblebee_lang') || 'es';
+            document.getElementById('language-select').value = lang;
+            changeLanguage(lang);
+            
+            const notif = localStorage.getItem('bumblebee_notifications') === 'true';
+            notificationsEnabled = notif;
+            if (notif) document.getElementById('notif-toggle').classList.add('active');
+            
+            const memEnabled = localStorage.getItem('bumblebee_memory_enabled') !== 'false';
+            memoryEnabled = memEnabled;
+            if (memEnabled) document.getElementById('memory-toggle').classList.add('active');
+            
+            const savedPers = localStorage.getItem('bumblebee_personalization');
+            if (savedPers) {
+                try {
+                    personalization = JSON.parse(savedPers);
+                    document.getElementById('tone-select').value = personalization.tone || 'friendly';
+                    document.getElementById('custom-instructions').value = personalization.customInstructions || '';
+                    document.getElementById('about-nickname').value = personalization.about?.nickname || '';
+                    document.getElementById('about-occupation').value = personalization.about?.occupation || '';
+                    document.getElementById('about-more').value = personalization.about?.more || '';
+                    if (personalization.features.warm) document.getElementById('feat-warm').classList.add('active');
+                    if (personalization.features.enthusiastic) document.getElementById('feat-enthusiastic').classList.add('active');
+                    if (personalization.features.headings) document.getElementById('feat-headings').classList.add('active');
+                    if (personalization.features.emoji) document.getElementById('feat-emoji').classList.add('active');
+                } catch(e) { console.error(e); }
+            }
+            
+            const savedMemories = localStorage.getItem('bumblebee_memories');
+            if (savedMemories) {
+                try { memories = JSON.parse(savedMemories); } catch(e) {}
+            }
+        }
+
+        userInput.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 120) + 'px'; });
+        userInput.addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+    </script>
+</body>
+</html>
