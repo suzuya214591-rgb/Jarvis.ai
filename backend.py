@@ -180,9 +180,21 @@ async def chat_endpoint(request: ChatRequest):
         intent = detect_intent(request.message)
         
         model_chain = {
-            "general": ["minimax/minimax-m3:free", "openai/gpt-oss-120b:free", "google/gemma-2-9b-it"],
-            "code": ["nvidia/nemotron-3-ultra-550b-a55b:free", "qwen/qwen3-coder:free", "google/gemma-2-9b-it"],
-            "fast": ["nvidia/nemotron-3.5-8b-instruct:free", "openai/gpt-oss-20b:free", "google/gemma-2-9b-it"]
+            "general": [
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "minimax/minimax-m3:free", 
+                "google/gemma-4-31b-it:free"
+            ],
+            "code": [
+                "poolside/laguna-s-2.1:free",
+                "cohere/north-mini-code:free",
+                "nvidia/nemotron-3-ultra-550b-a55b:free"
+            ],
+            "fast": [
+                "nvidia/nemotron-3.5-lightning:free",
+                "minimax/minimax-m2.7:free",
+                "google/gemma-4-26b-a4b-it:free"
+            ]
         }
 
         selected_models = model_chain.get(intent, model_chain["general"])
