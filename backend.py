@@ -1,22 +1,106 @@
 import os
 import json
-import urllib.request
+import time
+import hmac
+import logging
 import urllib.parse
-import urllib.error
-from fastapi import FastAPI, HTTPException
+from collections import defaultdict, deque
+from typing import List, Optional, Dict, Literal
+
+import httpx
+from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional, Dict
+from pydantic import BaseModel, Field
+
+# ----------------------------------------------------------------------------
+# LOGGING
+# ----------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger("bumblebee")
 
 app = FastAPI(title="Bumblebee AI Backend")
 
+# ----------------------------------------------------------------------------
+# CORS
+# Restringido a los dominios que realmente sirven el frontend. Sin
+# allow_credentials porque la API no usa cookies de sesión (la autenticación
+# va por header X-API-Key), así que no hace falta esa combinación insegura.
+# ----------------------------------------------------------------------------
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://jarvis-ai-0402.netlify.app",
+    ).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["POST", "GET"],
+    allow_headers=["Content-Type", "X-API-Key"],
 )
+
+# ----------------------------------------------------------------------------
+# AUTENTICACIÓN SIMPLE POR API KEY COMPARTIDA
+#
+# Esto NO reemplaza una autenticación de usuario real (Firebase ID tokens
+# verificados server-side sería lo ideal, ya que el frontend ya usa Firebase
+# Auth), pero cierra el hueco más grave: hoy cualquiera que encuentre la URL
+# puede pegarle directo sin pasar por el frontend. Con esto, el frontend
+# manda un header fijo que solo vos conocés (guardado en una env var acá y
+# en el código del frontend), y cualquier request sin ese header se rechaza.
+#
+# Es un secreto compartido embebido en JS, así que técnicamente cualquiera
+# que lea el código fuente del frontend puede extraerlo — no es
+# infalible — pero al menos frena scraping casual y bots automatizados que
+# escanean URLs sin inspeccionar el código. El paso siguiente recomendado es
+# migrar a verificación de Firebase ID tokens con firebase-admin, atando
+# cada request a un usuario real (incluida Firebase Anonymous Auth para
+# invitados) y permitiendo rate limiting por usuario en vez de por IP.
+# ----------------------------------------------------------------------------
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")
+
+
+def verify_api_key(x_api_key: Optional[str]) -> None:
+    if not BACKEND_API_KEY:
+        # Si no se configuró la env var, no bloqueamos arranque del server,
+        # pero sí negamos todo acceso y lo dejamos bien claro en el log.
+        logger.error("BACKEND_API_KEY no está configurada — rechazando todas las requests.")
+        raise HTTPException(status_code=503, detail="Servicio no disponible temporalmente")
+    if not x_api_key or not hmac.compare_digest(x_api_key, BACKEND_API_KEY):
+        raise HTTPException(status_code=401, detail="No autorizado")
+
+
+# ----------------------------------------------------------------------------
+# RATE LIMITING BÁSICO POR IP (en memoria)
+#
+# Nota: esto vive en memoria del proceso, así que si Fly.io corre varias
+# instancias/réplicas, cada una lleva su propio contador — no es un límite
+# global estricto, pero igual reduce mucho el abuso de una sola fuente.
+# Para algo más robusto a futuro conviene Redis o un servicio de rate
+# limiting dedicado.
+# ----------------------------------------------------------------------------
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "20"))
+RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+_request_log: Dict[str, deque] = defaultdict(deque)
+
+
+def check_rate_limit(client_ip: str) -> None:
+    now = time.time()
+    window_start = now - RATE_LIMIT_WINDOW_SECONDS
+    log = _request_log[client_ip]
+    while log and log[0] < window_start:
+        log.popleft()
+    if len(log) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="Demasiadas solicitudes, esperá un momento")
+    log.append(now)
+
 
 BUMBLEBEE_PERSONALITY = """
 Eres Bumblebee, una inteligencia artificial personal avanzada. Tu personalidad está inspirada en la versión de Bumblebee de Transformers: Animated: energético, bromista, impulsivo, confiado, competitivo y extremadamente leal.
@@ -55,95 +139,120 @@ Errores:
 Cuando cometas un error, reconócelo directamente. No intentes justificar una respuesta incorrecta. Puedes responder de forma natural, por ejemplo: "Sí, ahí metí la pata. Vamos a corregirlo."
 """
 
+# ----------------------------------------------------------------------------
+# MODELOS
+# ----------------------------------------------------------------------------
+
+MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "4000"))
+
+
+class ChatMessage(BaseModel):
+    # Antes esto era un dict suelto: List[dict]. Tiparlo evita KeyError si
+    # falta una clave, y Literal impide que el cliente inyecte un mensaje
+    # con role="system" para pisar las instrucciones de personalidad.
+    role: Literal["user", "bot", "assistant"]
+    content: str = Field(..., max_length=MAX_MESSAGE_LENGTH)
+
+
 class UserPreferences(BaseModel):
     tone: str = "friendly"
     features: Optional[Dict[str, bool]] = {}
-    customInstructions: str = ""
+    customInstructions: str = Field(default="", max_length=2000)
     about: Optional[Dict[str, str]] = {}
 
+
 class ChatRequest(BaseModel):
-    message: str
-    history: Optional[List[dict]] = []
+    message: str = Field(..., min_length=1, max_length=MAX_MESSAGE_LENGTH)
+    history: Optional[List[ChatMessage]] = Field(default_factory=list)
     preferences: Optional[UserPreferences] = None
-    memories: Optional[List[str]] = []
+    memories: Optional[List[str]] = Field(default_factory=list)
+
 
 class ChatResponse(BaseModel):
     response: str
     model_used: str = ""
 
+
 @app.get("/")
 async def root():
     return {"message": "Bumblebee API Online - Fly.io"}
 
-def call_openrouter(messages: list, model: str) -> dict:
+
+# ----------------------------------------------------------------------------
+# LLAMADAS A PROVEEDORES (ASYNC)
+#
+# Antes usaban urllib.request.urlopen(), que es bloqueante: mientras se
+# esperaba una respuesta (hasta 10s, con hasta 4 intentos en cadena), el
+# proceso entero de FastAPI quedaba congelado sin poder atender otras
+# requests. Con httpx.AsyncClient las llamadas son realmente async, así que
+# el servidor puede seguir atendiendo a otros usuarios mientras espera.
+# ----------------------------------------------------------------------------
+
+REQUEST_TIMEOUT = float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "8"))
+
+
+async def call_openrouter(client: httpx.AsyncClient, messages: list, model: str) -> dict:
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise Exception("Falta OPENROUTER_API_KEY")
+        raise RuntimeError("Falta OPENROUTER_API_KEY")
 
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://jarvis-ai-0402.netlify.app",
-        "X-Title": "Bumblebee AI"
+        "X-Title": "Bumblebee AI",
     }
-    
-    payload = json.dumps({
-        "model": model,
-        "messages": messages,
-        "temperature": 0.7
-    }).encode('utf-8')
+    payload = {"model": model, "messages": messages, "temperature": 0.7}
 
-    req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=10) as response:
-        return json.loads(response.read().decode('utf-8'))
+    resp = await client.post(url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
 
-def call_groq(messages: list, model: str) -> dict:
+
+async def call_groq(client: httpx.AsyncClient, messages: list, model: str) -> dict:
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise Exception("Falta GROQ_API_KEY")
+        raise RuntimeError("Falta GROQ_API_KEY")
 
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
-    
-    payload = json.dumps({
-        "model": model,
-        "messages": messages,
-        "temperature": 0.7
-    }).encode('utf-8')
+    payload = {"model": model, "messages": messages, "temperature": 0.7}
 
-    req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=10) as response:
-        return json.loads(response.read().decode('utf-8'))
+    resp = await client.post(url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
 
-def search_with_serpapi(query: str) -> str:
+
+async def search_with_serpapi(client: httpx.AsyncClient, query: str) -> str:
     api_key = os.getenv("SERPAPI_KEY")
     if not api_key:
-        raise Exception("Falta SERPAPI_KEY")
+        raise RuntimeError("Falta SERPAPI_KEY")
 
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(query)}&api_key={api_key}"
-    req = urllib.request.Request(url, method='GET')
-    with urllib.request.urlopen(req, timeout=10) as response:
-        data = json.loads(response.read().decode('utf-8'))
-        
+    resp = await client.get(url, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    data = resp.json()
+
     results = []
-    if 'answer_box' in data:
+    if "answer_box" in data:
         results.append(f"Respuesta directa: {data['answer_box'].get('answer', 'N/A')}")
-    if 'organic_results' in data:
-        for i, result in enumerate(data['organic_results'][:3]):
+    if "organic_results" in data:
+        for i, result in enumerate(data["organic_results"][:3]):
             results.append(f"{i+1}. {result.get('title', 'N/A')}: {result.get('snippet', 'N/A')}")
-    
+
     return "\n".join(results) if results else "No se encontraron resultados"
+
 
 def detect_intent(message: str) -> str:
     msg_lower = message.lower()
     code_keywords = ['código', 'programar', 'función', 'error', 'bug', 'script', 'python', 'javascript', 'html', 'css', 'code', 'function', 'debug', 'variable', 'clase', 'api', 'database', 'sql']
     search_keywords = ['busca', 'investiga', 'precio', 'dólar', 'dolar', 'noticia', 'actual', 'hoy', 'cuánto cuesta', 'cuanto vale', 'google', 'search']
     simple_keywords = ['hola', 'hi', 'hey', 'buenas', 'gracias', 'ok', 'sí', 'no', 'qué día', 'hora', 'clima', 'adiós', 'bye']
-    
+
     if any(kw in msg_lower for kw in search_keywords):
         return "search"
     elif any(kw in msg_lower for kw in code_keywords):
@@ -152,19 +261,20 @@ def detect_intent(message: str) -> str:
         return "fast"
     return "general"
 
+
 def build_final_prompt(prefs: UserPreferences, memories: List[str]) -> str:
     parts = []
     parts.append(BUMBLEBEE_PERSONALITY)
-    
+
     tone_modifiers = {
         "formal": "MODIFICADOR DE ESTILO: El usuario prefiere un tono más formal. Reduce las bromas y la energía excesiva, prioriza la claridad y la estructura, pero mantén tu esencia leal y útil.",
         "direct": "MODIFICADOR DE ESTILO: El usuario prefiere un tono directo y conciso. Ve al grano, reduce introducciones largas, pero mantén la claridad.",
         "creative": "MODIFICADOR DE ESTILO: El usuario prefiere un tono más creativo e imaginativo. Puedes usar más analogías y un lenguaje más vívido.",
-        "friendly": "MODIFICADOR DE ESTILO: Mantén el tono base de Bumblebee: amigable, cercano y natural."
+        "friendly": "MODIFICADOR DE ESTILO: Mantén el tono base de Bumblebee: amigable, cercano y natural.",
     }
     if prefs.tone in tone_modifiers:
         parts.append(tone_modifiers[prefs.tone])
-        
+
     if prefs.features:
         if prefs.features.get("emoji"):
             parts.append("MODIFICADOR: Usa emojis ocasionalmente para expresar entusiasmo, pero no abuses.")
@@ -174,27 +284,65 @@ def build_final_prompt(prefs: UserPreferences, memories: List[str]) -> str:
             parts.append("MODIFICADOR: Sé especialmente cálido y empático en tus respuestas.")
         if prefs.features.get("enthusiastic"):
             parts.append("MODIFICADOR: Muestra aún más entusiasmo y energía positiva.")
-            
+
     if prefs.customInstructions and prefs.customInstructions.strip():
         parts.append(f"INSTRUCCIONES PERSONALIZADAS DEL USUARIO: {prefs.customInstructions}")
-        
+
     about_parts = []
     if prefs.about:
-        if prefs.about.get("nickname"): about_parts.append(f"El usuario prefiere que le llames '{prefs.about['nickname']}'.")
-        if prefs.about.get("occupation"): about_parts.append(f"El usuario es {prefs.about['occupation']}.")
-        if prefs.about.get("more"): about_parts.append(f"Información adicional: {prefs.about['more']}")
+        if prefs.about.get("nickname"):
+            about_parts.append(f"El usuario prefiere que le llames '{prefs.about['nickname']}'.")
+        if prefs.about.get("occupation"):
+            about_parts.append(f"El usuario es {prefs.about['occupation']}.")
+        if prefs.about.get("more"):
+            about_parts.append(f"Información adicional: {prefs.about['more']}")
     if about_parts:
         parts.append("CONTEXTO DEL USUARIO: " + " ".join(about_parts))
-        
+
     if memories:
         parts.append("MEMORIAS IMPORTANTES: " + "\n".join(memories))
-        
+
     parts.append("REGLA FUNDAMENTAL: Tu personalidad nunca debe interferir con tu función principal. Primero eres un asistente útil, preciso y confiable. El humor y la energía sirven para hacer la interacción natural, pero nunca deben provocar respuestas incorrectas o información inventada.")
-    
+
     return "\n\n".join(parts)
 
+
+# Modelos ultra-rápidos 2026
+MODEL_CHAIN = {
+    "general": [
+        ("groq", "llama-3.1-8b-instant"),
+        ("openrouter", "cohere/north-mini-code:free"),
+        ("openrouter", "minimax/minimax-m3:free"),
+        ("groq", "openai/gpt-oss-20b"),
+    ],
+    "code": [
+        ("groq", "llama-3.1-8b-instant"),
+        ("openrouter", "cohere/north-mini-code:free"),
+        ("openrouter", "poolside/laguna-s-2.1:free"),
+    ],
+    "fast": [
+        ("groq", "openai/gpt-oss-20b"),
+        ("groq", "llama-3.1-8b-instant"),
+        ("openrouter", "minimax/minimax-m2.7:free"),
+    ],
+    "search": [
+        ("openrouter", "minimax/minimax-m3:free"),
+        ("groq", "llama-3.3-70b-versatile"),
+    ],
+}
+
+
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(
+    request: ChatRequest,
+    req: Request,
+    x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+):
+    verify_api_key(x_api_key)
+
+    client_ip = req.client.host if req.client else "unknown"
+    check_rate_limit(client_ip)
+
     try:
         prefs = request.preferences or UserPreferences()
         full_context = build_final_prompt(prefs, request.memories or [])
@@ -202,73 +350,65 @@ async def chat_endpoint(request: ChatRequest):
         messages = []
         if full_context:
             messages.append({"role": "system", "content": full_context})
-            
-        for msg in request.history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-            
+
+        # Se manda el historial completo del chat: cada conversación
+        # independiente conserva memoria de todo lo hablado. Ojo: si el
+        # chat crece mucho, algunos modelos de la cadena tienen ventanas de
+        # contexto limitadas y la request puede empezar a fallar por
+        # exceso de tokens — si eso pasa, conviene resumir el historial
+        # viejo en vez de mandarlo palabra por palabra, o elegir modelos
+        # con contexto más grande para conversaciones largas.
+        for msg in (request.history or []):
+            role = "assistant" if msg.role in ("bot", "assistant") else "user"
+            messages.append({"role": role, "content": msg.content})
+
         messages.append({"role": "user", "content": request.message})
 
         intent = detect_intent(request.message)
-        
-        # Si es búsqueda web, usar SerpAPI
-        if intent == "search":
-            try:
-                search_results = search_with_serpapi(request.message)
-                messages.append({"role": "system", "content": f"Resultados de búsqueda web:\n{search_results}\n\nUsa esta información para responder al usuario de manera clara y concisa."})
-            except Exception as e:
-                print(f"Error en SerpAPI: {e}")
-        
-        # Modelos ultra-rápidos 2026
-        model_chain = {
-            "general": [
-                ("groq", "llama-3.1-8b-instant"),  # 560 tok/s - Groq
-                ("openrouter", "cohere/north-mini-code:free"),  # 69.1 tok/s
-                ("openrouter", "minimax/minimax-m3:free"),
-                ("groq", "openai/gpt-oss-20b"),  # 1000 tok/s - Groq
-            ],
-            "code": [
-                ("groq", "llama-3.1-8b-instant"),
-                ("openrouter", "cohere/north-mini-code:free"),
-                ("openrouter", "poolside/laguna-s-2.1:free"),
-            ],
-            "fast": [
-                ("groq", "openai/gpt-oss-20b"),  # 1000 tok/s
-                ("groq", "llama-3.1-8b-instant"),  # 560 tok/s
-                ("openrouter", "minimax/minimax-m2.7:free"),
-            ],
-            "search": [
-                ("openrouter", "minimax/minimax-m3:free"),  # 1M contexto para búsquedas
-                ("groq", "llama-3.3-70b-versatile"),  # 280 tok/s
-            ]
-        }
 
-        selected_models = model_chain.get(intent, model_chain["general"])
-        print(f"🎯 Intención: {intent} | Modelos: {selected_models}")
+        async with httpx.AsyncClient() as client:
+            # Si es búsqueda web, usar SerpAPI
+            if intent == "search":
+                try:
+                    search_results = await search_with_serpapi(client, request.message)
+                    messages.append({
+                        "role": "system",
+                        "content": f"Resultados de búsqueda web:\n{search_results}\n\nUsa esta información para responder al usuario de manera clara y concisa.",
+                    })
+                except Exception as e:
+                    logger.warning("Error en SerpAPI: %s", e)
 
-        last_error = None
-        for provider, model in selected_models:
-            try:
-                print(f"🔄 Intentando con: {provider}/{model} (timeout: 10s)")
-                
-                if provider == "groq":
-                    data = call_groq(messages, model)
-                else:
-                    data = call_openrouter(messages, model)
-                
-                if "choices" in data and len(data["choices"]) > 0:
-                    bot_reply = data["choices"][0]["message"]["content"]
-                    print(f"✅ Éxito con: {provider}/{model}")
-                    return ChatResponse(response=bot_reply, model_used=f"{provider}/{model}")
-                    
-            except Exception as e:
-                last_error = str(e)
-                print(f"❌ Error con {provider}/{model}: {last_error[:100]}...")
-                continue
+            selected_models = MODEL_CHAIN.get(intent, MODEL_CHAIN["general"])
+            logger.info("Intención: %s | Modelos candidatos: %s", intent, selected_models)
 
-        raise HTTPException(status_code=502, detail=f"Todos los modelos fallaron. Último error: {last_error}")
+            last_error = None
+            for provider, model in selected_models:
+                try:
+                    logger.info("Intentando con %s/%s (timeout: %ss)", provider, model, REQUEST_TIMEOUT)
+
+                    if provider == "groq":
+                        data = await call_groq(client, messages, model)
+                    else:
+                        data = await call_openrouter(client, messages, model)
+
+                    if "choices" in data and len(data["choices"]) > 0:
+                        bot_reply = data["choices"][0]["message"]["content"]
+                        logger.info("Éxito con %s/%s", provider, model)
+                        return ChatResponse(response=bot_reply, model_used=f"{provider}/{model}")
+
+                except Exception as e:
+                    last_error = str(e)
+                    logger.warning("Error con %s/%s: %s", provider, model, last_error[:200])
+                    continue
+
+        # No exponemos el detalle crudo del proveedor al cliente (puede
+        # incluir info de cuenta, límites de rate, etc.) — lo dejamos solo
+        # en el log del servidor.
+        logger.error("Todos los modelos fallaron. Último error: %s", last_error)
+        raise HTTPException(status_code=502, detail="No pude generar una respuesta, intentá de nuevo en un momento.")
 
     except HTTPException:
         raise
     except Exception as e:
-        print(f"💥 Error crítico: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error crítico en /api/chat")
+        raise HTTPException(status_code=500, detail="Ocurrió un error interno, intentá de nuevo.")
