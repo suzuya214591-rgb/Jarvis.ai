@@ -97,12 +97,55 @@ def call_openrouter(messages: list, model: str) -> dict:
     with urllib.request.urlopen(req, timeout=10) as response:
         return json.loads(response.read().decode('utf-8'))
 
+def call_groq(messages: list, model: str) -> dict:
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise Exception("Falta GROQ_API_KEY")
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "temperature": 0.7
+    }).encode('utf-8')
+
+    req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
+    with urllib.request.urlopen(req, timeout=10) as response:
+        return json.loads(response.read().decode('utf-8'))
+
+def search_with_serpapi(query: str) -> str:
+    api_key = os.getenv("SERPAPI_KEY")
+    if not api_key:
+        raise Exception("Falta SERPAPI_KEY")
+
+    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(query)}&api_key={api_key}"
+    req = urllib.request.Request(url, method='GET')
+    with urllib.request.urlopen(req, timeout=10) as response:
+        data = json.loads(response.read().decode('utf-8'))
+        
+    results = []
+    if 'answer_box' in data:
+        results.append(f"Respuesta directa: {data['answer_box'].get('answer', 'N/A')}")
+    if 'organic_results' in data:
+        for i, result in enumerate(data['organic_results'][:3]):
+            results.append(f"{i+1}. {result.get('title', 'N/A')}: {result.get('snippet', 'N/A')}")
+    
+    return "\n".join(results) if results else "No se encontraron resultados"
+
 def detect_intent(message: str) -> str:
     msg_lower = message.lower()
     code_keywords = ['código', 'programar', 'función', 'error', 'bug', 'script', 'python', 'javascript', 'html', 'css', 'code', 'function', 'debug', 'variable', 'clase', 'api', 'database', 'sql']
+    search_keywords = ['busca', 'investiga', 'precio', 'dólar', 'dolar', 'noticia', 'actual', 'hoy', 'cuánto cuesta', 'cuanto vale', 'google', 'search']
     simple_keywords = ['hola', 'hi', 'hey', 'buenas', 'gracias', 'ok', 'sí', 'no', 'qué día', 'hora', 'clima', 'adiós', 'bye']
     
-    if any(kw in msg_lower for kw in code_keywords):
+    if any(kw in msg_lower for kw in search_keywords):
+        return "search"
+    elif any(kw in msg_lower for kw in code_keywords):
         return "code"
     elif any(kw in msg_lower for kw in simple_keywords) and len(message) < 60:
         return "fast"
@@ -166,26 +209,35 @@ async def chat_endpoint(request: ChatRequest):
 
         intent = detect_intent(request.message)
         
+        # Si es búsqueda web, usar SerpAPI
+        if intent == "search":
+            try:
+                search_results = search_with_serpapi(request.message)
+                messages.append({"role": "system", "content": f"Resultados de búsqueda web:\n{search_results}\n\nUsa esta información para responder al usuario de manera clara y concisa."})
+            except Exception as e:
+                print(f"Error en SerpAPI: {e}")
+        
+        # Modelos ultra-rápidos 2026
         model_chain = {
             "general": [
-                "cohere/north-mini-code:free",
-                "minimax/minimax-m3:free",
-                "nvidia/nemotron-3.5-lightning:free",
-                "nvidia/nemotron-3-ultra-550b-a55b:free",
-                "google/gemma-4-31b-it:free",
-                "z-ai/glm-5.2:free"
+                ("groq", "llama-3.1-8b-instant"),  # 560 tok/s - Groq
+                ("openrouter", "cohere/north-mini-code:free"),  # 69.1 tok/s
+                ("openrouter", "minimax/minimax-m3:free"),
+                ("groq", "openai/gpt-oss-20b"),  # 1000 tok/s - Groq
             ],
             "code": [
-                "cohere/north-mini-code:free",
-                "poolside/laguna-s-2.1:free",
-                "nvidia/nemotron-3-ultra-550b-a55b:free",
-                "minimax/minimax-m3:free"
+                ("groq", "llama-3.1-8b-instant"),
+                ("openrouter", "cohere/north-mini-code:free"),
+                ("openrouter", "poolside/laguna-s-2.1:free"),
             ],
             "fast": [
-                "minimax/minimax-m2.7:free",
-                "nvidia/nemotron-3.5-lightning:free",
-                "google/gemma-4-26b-a4b-it:free",
-                "liquid/lfm-2.5-2.6b:free"
+                ("groq", "openai/gpt-oss-20b"),  # 1000 tok/s
+                ("groq", "llama-3.1-8b-instant"),  # 560 tok/s
+                ("openrouter", "minimax/minimax-m2.7:free"),
+            ],
+            "search": [
+                ("openrouter", "minimax/minimax-m3:free"),  # 1M contexto para búsquedas
+                ("groq", "llama-3.3-70b-versatile"),  # 280 tok/s
             ]
         }
 
@@ -193,19 +245,23 @@ async def chat_endpoint(request: ChatRequest):
         print(f"🎯 Intención: {intent} | Modelos: {selected_models}")
 
         last_error = None
-        for model in selected_models:
+        for provider, model in selected_models:
             try:
-                print(f"🔄 Intentando con: {model} (timeout: 10s)")
-                data = call_openrouter(messages, model)
+                print(f"🔄 Intentando con: {provider}/{model} (timeout: 10s)")
+                
+                if provider == "groq":
+                    data = call_groq(messages, model)
+                else:
+                    data = call_openrouter(messages, model)
                 
                 if "choices" in data and len(data["choices"]) > 0:
                     bot_reply = data["choices"][0]["message"]["content"]
-                    print(f"✅ Éxito con: {model}")
-                    return ChatResponse(response=bot_reply, model_used=model)
+                    print(f"✅ Éxito con: {provider}/{model}")
+                    return ChatResponse(response=bot_reply, model_used=f"{provider}/{model}")
                     
             except Exception as e:
                 last_error = str(e)
-                print(f" Error con {model}: {last_error[:100]}...")
+                print(f"❌ Error con {provider}/{model}: {last_error[:100]}...")
                 continue
 
         raise HTTPException(status_code=502, detail=f"Todos los modelos fallaron. Último error: {last_error}")
