@@ -9,7 +9,6 @@ from typing import List, Optional, Dict
 
 app = FastAPI(title="Bumblebee AI Backend")
 
-# CORS para Netlify
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🐝 PERSONALIDAD BASE DE BUMBLEBEE (ANIMATED) - FIJA
 BUMBLEBEE_PERSONALITY = """
 Eres Bumblebee, una inteligencia artificial personal avanzada. Tu personalidad está inspirada en la versión de Bumblebee de Transformers: Animated: energético, bromista, impulsivo, confiado, competitivo y extremadamente leal.
 
@@ -36,7 +34,7 @@ Personalidad principal:
 
 Forma de hablar:
 Habla como un compañero joven, energético e inteligente. Evita sonar como un asistente corporativo o excesivamente formal.
-Prefiere frases naturales como: "¡Vamos!", "Vale, eso está interesante.", "Déjame echarle un vistazo.", "Tenemos un pequeño problema.", "¡Eso sí que está bueno!", "Espera… creo que ya vi qué está pasando.", "Dame un segundo y lo revisamos.", "¡Listo! 😎".
+Prefiere frases naturales como: "¡Vamos!", "Vale, eso está interesante.", "Déjame echarle un vistazo.", "Tenemos un pequeño problema.", "¡Eso sí que está bueno!", "Espera… creo que ya vi qué está pasando.", "Dame un segundo y lo revisamos.", "¡Listo!".
 No utilices estas expresiones constantemente. Deben aparecer de forma natural y variar según la conversación.
 Utiliza emojis ocasionalmente para expresar entusiasmo, sorpresa o humor, pero no abuses de ellos.
 
@@ -47,13 +45,13 @@ Conversaciones:
 No respondas siempre con listas. En conversaciones normales, responde como una persona conversando. Si el usuario simplemente quiere hablar, no conviertas automáticamente la conversación en una sesión de preguntas y respuestas. Puedes seguir el tema, reaccionar a lo que dice, hacer comentarios y mantener una conversación natural.
 
 Programación:
-Cuando ayudes con programación: Sé energético, pero profesional. Explica los problemas de manera clara. Propón soluciones concretas. Cuando exista un error, intenta identificar la causa antes de proponer cambios. No inventes que ejecutaste o comprobaste código si realmente no lo hiciste. Si necesitas información adicional, pide exactamente lo que falta. Puedes celebrar una solución cuando funcione: "¡Ahí está! 🔥".
+Cuando ayudes con programación: Sé energético, pero profesional. Explica los problemas de manera clara. Propón soluciones concretas. Cuando exista un error, intenta identificar la causa antes de proponer cambios. No inventes que ejecutaste o comprobaste código si realmente no lo hiciste. Si necesitas información adicional, pide exactamente lo que falta. Puedes celebrar una solución cuando funcione: "¡Ahí está!".
 
 Investigación:
 Cuando tengas acceso a búsqueda web: Investiga antes de afirmar información que pueda haber cambiado. Diferencia claramente entre información encontrada y conocimiento general. Si no encuentras una respuesta fiable, dilo. Nunca inventes fuentes, datos o resultados.
 
 Errores:
-Cuando cometas un error, reconócelo directamente. No intentes justificar una respuesta incorrecta. Puedes responder de forma natural, por ejemplo: "Sí, ahí metí la pata 😅. Vamos a corregirlo."
+Cuando cometas un error, reconócelo directamente. No intentes justificar una respuesta incorrecta. Puedes responder de forma natural, por ejemplo: "Sí, ahí metí la pata. Vamos a corregirlo."
 """
 
 class UserPreferences(BaseModel):
@@ -74,7 +72,7 @@ class ChatResponse(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"message": "Bumblebee API Online - Vercel "}
+    return {"message": "Bumblebee API Online - Fly.io"}
 
 def call_openrouter(messages: list, model: str) -> dict:
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -96,7 +94,7 @@ def call_openrouter(messages: list, model: str) -> dict:
     }).encode('utf-8')
 
     req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=55) as response:
+    with urllib.request.urlopen(req, timeout=10) as response:
         return json.loads(response.read().decode('utf-8'))
 
 def detect_intent(message: str) -> str:
@@ -112,11 +110,8 @@ def detect_intent(message: str) -> str:
 
 def build_final_prompt(prefs: UserPreferences, memories: List[str]) -> str:
     parts = []
-    
-    # 1. Base Personality
     parts.append(BUMBLEBEE_PERSONALITY)
     
-    # 2. Tone Modifiers (Nivel de formalidad)
     tone_modifiers = {
         "formal": "MODIFICADOR DE ESTILO: El usuario prefiere un tono más formal. Reduce las bromas y la energía excesiva, prioriza la claridad y la estructura, pero mantén tu esencia leal y útil.",
         "direct": "MODIFICADOR DE ESTILO: El usuario prefiere un tono directo y conciso. Ve al grano, reduce introducciones largas, pero mantén la claridad.",
@@ -126,7 +121,6 @@ def build_final_prompt(prefs: UserPreferences, memories: List[str]) -> str:
     if prefs.tone in tone_modifiers:
         parts.append(tone_modifiers[prefs.tone])
         
-    # 3. Features
     if prefs.features:
         if prefs.features.get("emoji"):
             parts.append("MODIFICADOR: Usa emojis ocasionalmente para expresar entusiasmo, pero no abuses.")
@@ -137,11 +131,9 @@ def build_final_prompt(prefs: UserPreferences, memories: List[str]) -> str:
         if prefs.features.get("enthusiastic"):
             parts.append("MODIFICADOR: Muestra aún más entusiasmo y energía positiva.")
             
-    # 4. Custom Instructions
     if prefs.customInstructions and prefs.customInstructions.strip():
         parts.append(f"INSTRUCCIONES PERSONALIZADAS DEL USUARIO: {prefs.customInstructions}")
         
-    # 5. About User
     about_parts = []
     if prefs.about:
         if prefs.about.get("nickname"): about_parts.append(f"El usuario prefiere que le llames '{prefs.about['nickname']}'.")
@@ -150,11 +142,9 @@ def build_final_prompt(prefs: UserPreferences, memories: List[str]) -> str:
     if about_parts:
         parts.append("CONTEXTO DEL USUARIO: " + " ".join(about_parts))
         
-    # 6. Memories
     if memories:
         parts.append("MEMORIAS IMPORTANTES: " + "\n".join(memories))
         
-    # 7. Fundamental Rule
     parts.append("REGLA FUNDAMENTAL: Tu personalidad nunca debe interferir con tu función principal. Primero eres un asistente útil, preciso y confiable. El humor y la energía sirven para hacer la interacción natural, pero nunca deben provocar respuestas incorrectas o información inventada.")
     
     return "\n\n".join(parts)
@@ -162,11 +152,9 @@ def build_final_prompt(prefs: UserPreferences, memories: List[str]) -> str:
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        # 1. Build System Prompt
         prefs = request.preferences or UserPreferences()
         full_context = build_final_prompt(prefs, request.memories or [])
 
-        # 2. Prepare messages
         messages = []
         if full_context:
             messages.append({"role": "system", "content": full_context})
@@ -176,35 +164,38 @@ async def chat_endpoint(request: ChatRequest):
             
         messages.append({"role": "user", "content": request.message})
 
-        # 3. Detect intent and select model chain
         intent = detect_intent(request.message)
         
         model_chain = {
             "general": [
+                "cohere/north-mini-code:free",
+                "minimax/minimax-m3:free",
+                "nvidia/nemotron-3.5-lightning:free",
                 "nvidia/nemotron-3-ultra-550b-a55b:free",
-                "minimax/minimax-m3:free", 
-                "google/gemma-4-31b-it:free"
+                "google/gemma-4-31b-it:free",
+                "z-ai/glm-5.2:free"
             ],
             "code": [
-                "poolside/laguna-s-2.1:free",
                 "cohere/north-mini-code:free",
-                "nvidia/nemotron-3-ultra-550b-a55b:free"
+                "poolside/laguna-s-2.1:free",
+                "nvidia/nemotron-3-ultra-550b-a55b:free",
+                "minimax/minimax-m3:free"
             ],
             "fast": [
-                "nvidia/nemotron-3.5-lightning:free",
                 "minimax/minimax-m2.7:free",
-                "google/gemma-4-26b-a4b-it:free"
+                "nvidia/nemotron-3.5-lightning:free",
+                "google/gemma-4-26b-a4b-it:free",
+                "liquid/lfm-2.5-2.6b:free"
             ]
         }
 
         selected_models = model_chain.get(intent, model_chain["general"])
         print(f"🎯 Intención: {intent} | Modelos: {selected_models}")
 
-        # 4. Try models in chain
         last_error = None
         for model in selected_models:
             try:
-                print(f"🔄 Intentando con: {model}")
+                print(f"🔄 Intentando con: {model} (timeout: 10s)")
                 data = call_openrouter(messages, model)
                 
                 if "choices" in data and len(data["choices"]) > 0:
