@@ -835,6 +835,10 @@
         // API URL - ️ CAMBIA ESTO por tu URL de Vercel
            const API_URL = 'https://bumblebee-api-cinder-sandbar-9571.fly.dev/api/chat';
 
+        // Clave que el backend exige en el header X-API-Key (debe ser EXACTAMENTE
+        // el mismo valor que configuraste con: fly secrets set BACKEND_API_KEY=...)
+        const BACKEND_API_KEY = "187e421b0aaea01a19dfd3d9b96cee388bba0b2468f2c169e633ab3cd26b0219";
+
         const chatContainer = document.getElementById('chat-container');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
@@ -1163,25 +1167,23 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
 
             try {
-                const BACKEND_API_KEY= "187e421b0aaea01a19dfd3d9b96cee388bba0b2468f2c169e633ab3cd26b0219";
-
-                const res = await fetch(API_URL, { 
-                    method: 'POST', 
-                    headers: {'Content-Type':'application/json",
-                    'X-API-Key': BACKEND_API_KEY 
-                }, 
-                    body: JSON.stringify({ 
-                        message, 
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': BACKEND_API_KEY
+                    },
+                    body: JSON.stringify({
+                        message,
                         history: memoryEnabled ? conversationHistory.slice(0,-1) : [],
-                        preferences:
-                        {
-            tone: document.getElementById('tone-select').value,
-            features: personalization.features,
-            customInstructions: document.getElementById('custom-instructions').value,
-            about: personalization.about
-        },
+                        preferences: {
+                            tone: document.getElementById('tone-select').value,
+                            features: personalization.features,
+                            customInstructions: document.getElementById('custom-instructions').value,
+                            about: personalization.about
+                        },
                         memories: memoryEnabled ? memories : []
-                    }) 
+                    })
                 });
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 const data = await res.json();
