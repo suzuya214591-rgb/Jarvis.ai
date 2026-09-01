@@ -427,6 +427,23 @@
         .message-content p { margin-bottom: 12px; }
         .message-content p:last-child { margin-bottom: 0; }
 
+        /* MARKDOWN: encabezados, tabla y regla horizontal dentro de las respuestas */
+        .message-content h1, .message-content h2, .message-content h3, .message-content h4 {
+            margin: 14px 0 8px; font-weight: 700; line-height: 1.3;
+        }
+        .message-content h1:first-child, .message-content h2:first-child,
+        .message-content h3:first-child, .message-content h4:first-child { margin-top: 0; }
+        .message-content h1 { font-size: 19px; }
+        .message-content h2 { font-size: 17px; }
+        .message-content h3 { font-size: 15.5px; }
+        .message-content h4 { font-size: 14.5px; }
+        .message-content .md-hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+        .md-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 12px 0; border-radius: 10px; border: 1px solid var(--border); }
+        .md-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .md-table th, .md-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+        .md-table th { background: var(--bg-input); color: var(--yellow); font-weight: 700; white-space: nowrap; }
+        .md-table tr:last-child td { border-bottom: none; }
+
         .copy-code-btn {
             position: absolute; top: 10px; right: 10px; background: transparent;
             border: 1px solid var(--border); color: var(--text-secondary); cursor: pointer;
@@ -1445,15 +1462,108 @@
 
         function parseMarkdown(text) {
             // Escapamos primero el texto crudo para que el HTML del usuario/bot nunca se ejecute,
-            // y recién después aplicamos las transformaciones de markdown sobre el texto ya seguro.
-            let h = escapeHtml(text)
-                .replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>')
-                .replace(/`([^`]+)`/g,'<code>$1</code>')
-                .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g,'<em>$1</em>')
-                .replace(/^- (.*$)/gim,'<li>$1</li>')
-                .replace(/\n/g,'<br>');
-            return h.replace(/(<li>.*?<\/li>(\s*<br>)?)+/g, m => `<ul>${m.replace(/<br>/g,'')}</ul>`);
+            // y recién después interpretamos el markdown sobre el texto ya seguro. Este parser
+            // recorre línea por línea para poder reconocer bloques (encabezados #, tablas |---|,
+            // listas numeradas y con guión) además del formato en línea (negrita, cursiva, código).
+            const inlineFormat = (str) => str
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>');
+
+            const lines = escapeHtml(text).split('\n');
+            let html = '';
+            let inUl = false;
+            let inOl = false;
+            const closeLists = () => {
+                if (inUl) { html += '</ul>'; inUl = false; }
+                if (inOl) { html += '</ol>'; inOl = false; }
+            };
+
+            let i = 0;
+            while (i < lines.length) {
+                const line = lines[i];
+                const trimmed = line.trim();
+
+                // Bloque de código ```...```
+                if (/^```/.test(trimmed)) {
+                    closeLists();
+                    const codeLines = [];
+                    i++;
+                    while (i < lines.length && !/^```/.test(lines[i].trim())) { codeLines.push(lines[i]); i++; }
+                    html += `<pre><code>${codeLines.join('\n')}</code></pre>`;
+                    i++;
+                    continue;
+                }
+
+                // Encabezados # ## ### ####
+                const headerMatch = trimmed.match(/^(#{1,4})\s+(.*)$/);
+                if (headerMatch) {
+                    closeLists();
+                    const level = headerMatch[1].length;
+                    html += `<h${level} class="md-heading">${inlineFormat(headerMatch[2])}</h${level}>`;
+                    i++;
+                    continue;
+                }
+
+                // Regla horizontal ---
+                if (/^-{3,}$/.test(trimmed)) {
+                    closeLists();
+                    html += '<hr class="md-hr">';
+                    i++;
+                    continue;
+                }
+
+                // Tabla estilo Markdown: fila de encabezado + fila separadora (|---|---|)
+                if (/^\|.*\|$/.test(trimmed) && i + 1 < lines.length && /^\|?[\s:|-]+\|?$/.test(lines[i + 1].trim()) && lines[i + 1].includes('-')) {
+                    closeLists();
+                    const headerCells = trimmed.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+                    i += 2;
+                    const rows = [];
+                    while (i < lines.length && /^\|.*\|$/.test(lines[i].trim())) {
+                        rows.push(lines[i].trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
+                        i++;
+                    }
+                    html += '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+                    headerCells.forEach(c => { html += `<th>${inlineFormat(c)}</th>`; });
+                    html += '</tr></thead><tbody>';
+                    rows.forEach(r => {
+                        html += '<tr>';
+                        r.forEach(c => { html += `<td>${inlineFormat(c)}</td>`; });
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    continue;
+                }
+
+                // Lista con guión
+                const ulMatch = trimmed.match(/^[-*]\s+(.*)$/);
+                if (ulMatch) {
+                    if (inOl) { html += '</ol>'; inOl = false; }
+                    if (!inUl) { html += '<ul>'; inUl = true; }
+                    html += `<li>${inlineFormat(ulMatch[1])}</li>`;
+                    i++;
+                    continue;
+                }
+
+                // Lista numerada
+                const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+                if (olMatch) {
+                    if (inUl) { html += '</ul>'; inUl = false; }
+                    if (!inOl) { html += '<ol>'; inOl = true; }
+                    html += `<li>${inlineFormat(olMatch[1])}</li>`;
+                    i++;
+                    continue;
+                }
+
+                closeLists();
+
+                if (trimmed === '') { html += '<br>'; i++; continue; }
+
+                html += inlineFormat(line) + '<br>';
+                i++;
+            }
+            closeLists();
+            return html;
         }
 
         function addCopyButtons() {
